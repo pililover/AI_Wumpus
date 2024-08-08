@@ -1,7 +1,15 @@
+import pygame
+import sys
 class Program:
     def __init__(self, input_file):
         self.map, self.size = self.read_map(input_file)
         self.update_percepts()
+        self.cell_size = 75
+        self.width = self.size * self.cell_size
+        self.height = self.size * self.cell_size
+        pygame.init()
+        self.screen = pygame.display.set_mode((self.width, self.height))
+        pygame.display.set_caption("Wumpus World")
 
     def read_map(self, input_file):
         with open(input_file, 'r') as f:
@@ -31,12 +39,34 @@ class Program:
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nx, ny = x + dx, y + dy
             if 0 <= nx < self.size and 0 <= ny < self.size:
-                if self.map[nx][ny][0] == '-':
-                    self.map[nx][ny] += '.' + percept
+                self.map[nx][ny] += '.' + percept
 
-    def print_map(self):
-        for row in self.map:
-            print(' '.join(row))
+    def draw_grid(self):
+        self.screen.fill((255, 255, 255))  # Màu nền trắng
+        for i in range(self.size):
+            for j in range(self.size):
+                rect = pygame.Rect(j * self.cell_size, i * self.cell_size, self.cell_size, self.cell_size)
+                pygame.draw.rect(self.screen, (0, 0, 0), rect, 1)  # Viền đen
+                font = pygame.font.SysFont(None, 30)
+                if self.map[i][j] == '-':
+                    continue
+                text = font.render(self.map[i][j], True, (0, 0, 0))
+                self.screen.blit(text, (j * self.cell_size + 5, i * self.cell_size + 5))
+        pygame.display.flip()
 
-program = Program('map1.txt')
-program.print_map()
+    def run(self):
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+            self.draw_grid()
+            pygame.time.Clock().tick(60)
+        pygame.quit()
+        sys.exit()
+
+# Ví dụ gọi class Program với file đầu vào
+if __name__ == "__main__":
+    input_file = "map1.txt"  # Đường dẫn đến file đầu vào
+    program = Program(input_file)
+    program.run()  # Chạy giao diện Pygame
