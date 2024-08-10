@@ -38,6 +38,10 @@ class Sentence:
             return sentence
         return f"({sentence})"
     
+    def to_cnf(self):
+        """Converts the sentence to CNF."""
+        raise NotImplementedError
+    
     
 class Symbol(Sentence):
     def __init__(self, name):
@@ -64,6 +68,8 @@ class Symbol(Sentence):
     def symbols(self):
         return {self.name}
     
+    def to_cnf(self):
+        return self
     
 class Not(Sentence):
     def __init__(self, operand):
@@ -87,6 +93,16 @@ class Not(Sentence):
     
     def symbols(self):
         return self.operand.symbols()
+    
+    def to_cnf(self):
+        if isinstance(self.operand, Not):
+            return self.operand.operand.to_cnf()
+        elif isinstance(self.operand, And):
+            return Or(*(Not(conjunct).to_cnf() for conjunct in self.operand.conjuncts)).to_cnf()
+        elif isinstance(self.operand, Or):
+            return And(*(Not(disjunct).to_cnf() for disjunct in self.operand.disjuncts)).to_cnf()
+        else:
+            return Not(self.operand.to_cnf())
     
 class And(Sentence):
     def __init__(self, *conjuncts):
@@ -119,6 +135,9 @@ class And(Sentence):
     def symbols(self):
         return set.union(*[conjunct.symbols() for conjunct in self.conjuncts])
     
+    def to_cnf(self):
+        return And(*(conjunct.to_cnf() for conjunct in self.conjuncts))
+    
 class Or(Sentence):
     def __init__(self, *disjuncts):
         for disjunct in disjuncts:
@@ -138,13 +157,36 @@ class Or(Sentence):
     def evaluate(self, model):
         return any(disjunct.evaluate(model) for disjunct in self.disjuncts)
     
-    def formula(self):
+    def formula(self):  
         if len(self.disjuncts) == 1:
             return self.disjuncts[0].formula()
         return f" {chr(0x2228)} ".join([Sentence.parenthesize(disjunct.formula()) for disjunct in self.disjuncts])
     
     def symbols(self):
         return set.union(*[disjunct.symbols() for disjunct in self.disjuncts])
+    
+    def to_cnf(self):
+        if len(self.disjuncts) == 1:
+            return self.disjuncts[0].to_cnf()
+        new_disjuncts = []
+        for disjunct in self.disjuncts:
+            new_disjuncts.append(disjunct.to_cnf())
+        return self._distribute_or(new_disjuncts)
+    
+    @staticmethod
+    def _distribute_or(disjuncts):
+        # Distribution logic
+        # Distribute OR over AND to convert to CNF
+        if not disjuncts:
+            return And()  # Empty And is essentially True
+        if len(disjuncts) == 1:
+            return disjuncts[0]
+        if isinstance(disjuncts[0], And):
+            rest_disjunction = Or._distribute_or(disjuncts[1:])
+            return And(*[Or(conjunct, rest_disjunction).to_cnf() for conjunct in disjuncts[0].conjuncts])
+        if isinstance(disjuncts[1], And):
+            return Or._distribute_or([disjuncts[1], disjuncts[0]])
+        return Or(*disjuncts)
 
 class Implication(Sentence):
     def __init__(self, antecedent, consequent):
@@ -172,6 +214,9 @@ class Implication(Sentence):
     
     def symbols(self):
         return set.union(self.antecedent.symbols(), self.consequent.symbols())
+    
+    def to_cnf(self):
+        return Or(Not(self.antecedent), self.consequent).to_cnf()
     
 class Biconditional(Sentence):
     def __init__(self, left, right):
@@ -201,3 +246,7 @@ class Biconditional(Sentence):
     def symbols(self):
         return set.union(self.left.symbols(), self.right.symbols()) 
     
+    def to_cnf(self):
+        left_to_right = Implication(self.left, self.right)
+        right_to_left = Implication(self.right, self.left)
+        return And(left_to_right.to_cnf(), right_to_left.to_cnf()).to_cnf()

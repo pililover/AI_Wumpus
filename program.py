@@ -34,6 +34,10 @@ class Program:
                         self.add_percept(i, j, 'S')
                     elif 'P' in self.map[i][j]:
                         self.add_percept(i, j, 'B')
+                        
+    def mark_visited(self, pos):
+        x, y = pos
+        self.map[self.size - x][y - 1] += '.V'
 
     def add_percept(self, x, y, percept):
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
@@ -64,9 +68,21 @@ class Program:
             pygame.time.Clock().tick(60)
         pygame.quit()
         sys.exit()
-
+        
+    def get_cell_info(self, pos):
+        x, y = pos
+        return self.map[self.size - x][y-1]
+    
+    def print_map(self):
+        for row in self.map:
+            print(' '.join(row))
 # Ví dụ gọi class Program với file đầu vào
-if __name__ == "__main__":
-    input_file = "map1.txt"  # Đường dẫn đến file đầu vào
-    program = Program(input_file)
-    program.run()  # Chạy giao diện Pygame
+# if __name__ == "__main__":
+#     input_file = "map1.txt"  # Đường dẫn đến file đầu vào
+#     program = Program(input_file)
+#     program.run()  # Chạy giao diện Pygame
+
+
+
+
+
