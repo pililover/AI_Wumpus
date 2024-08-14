@@ -76,6 +76,13 @@ class Program:
     def print_map(self):
         for row in self.map:
             print(' '.join(row))
+            
+    def update_cellinfor(self, pos, infor):
+        x, y = pos
+        self.map[self.size - x][y-1] = infor
+            
+    def mark_cell_safe(self, pos):
+        self.update_cellinfor(pos,'-')
 # Ví dụ gọi class Program với file đầu vào
 # if __name__ == "__main__":
 #     input_file = "map1.txt"  # Đường dẫn đến file đầu vào

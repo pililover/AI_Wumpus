@@ -1,5 +1,6 @@
 from sympy import symbols, Not, And, Or, Implies, Equivalent
 from sympy.logic.boolalg import to_cnf
+from sympy.logic.inference import satisfiable
 from itertools import combinations
 from queue import PriorityQueue
 from node import Node
@@ -27,7 +28,6 @@ class Agent:
     
     def infer_surroundings(self, element):
         x, y = self.pos
-        symbols_list = []
         surroundings = [
             (x+1, y),
             (x-1, y),
@@ -35,42 +35,78 @@ class Agent:
             (x, y-1)
         ]
         
+        valid_neighbors = []
         for (i, j) in surroundings:
-            if i <= 0 or i > self.grid_size or j <= 0 or j > self.grid_size:
-                continue
-            symbols_list.append(symbols(f'{element}{i}{j}'))
-            
-        return symbols_list
+            if 1 <= i <= self.grid_size and 1 <= j <= self.grid_size:
+                valid_neighbors.append((i, j))
+                
+        return valid_neighbors
     
     def update_KB(self):
         x, y = self.pos
         percepts = self.perceive_current_cell()
 
-        # Update KB with inferences based on percepts.
-        symbols_list_P = self.infer_surroundings('P')
-        right_P = Or(*symbols_list_P)
-        cnf = to_cnf(Equivalent(symbols(f'B{x}{y}'), right_P), True)
-        self.KB = And(self.KB, cnf)
+        B = symbols(f'B{x}{y}')
+        S = symbols(f'S{x}{y}')
+        P = symbols(f'P{x}{y}')
+        W = symbols(f'W{x}{y}')
+        G = symbols(f'G{x}{y}')
+        safe = symbols(f'Safe{x}{y}')
+        danger = symbols(f'Danger{x}{y}')
+        glitter = symbols(f'Glitter{x}{y}')
+
+        neighbors = self.infer_surroundings('nextTo')
+
+        max_neighbors = 4
+        for nx, ny in neighbors:
+            self.KB = And(self.KB, Implies(P, Or(*[symbols(f'B{nx}{ny}')])))
+
+        corner = symbols(f'Corner{x}{y}')
+        edge = symbols(f'Edge{x}{y}')
+        middle = symbols(f'Middle{x}{y}')
+        self.KB = And(self.KB, Or(corner, edge, middle))
+
+        self.KB = And(self.KB, Implies(corner, len(neighbors) == 2))
+        self.KB = And(self.KB, Implies(edge, len(neighbors) == 3))
+        self.KB = And(self.KB, Implies(middle, len(neighbors) == 4))
+
+        self.KB = And(self.KB, Implies(P, Or(*[symbols(f'B{nx}{ny}') for nx, ny in neighbors])))
+        self.KB = And(self.KB, Implies(W, Or(*[symbols(f'S{nx}{ny}') for nx, ny in neighbors])))
+        self.KB = And(self.KB, Equivalent(G, glitter))
+        self.KB = And(self.KB, Implies(P, danger))
+        self.KB = And(self.KB, Implies(W, danger))
+
+        for nx, ny in neighbors:
+            self.KB = And(self.KB, Implies(symbols(f'P{nx}{ny}'), B))
+
+        for nx, ny in neighbors:
+            self.KB = And(self.KB, Implies(symbols(f'W{nx}{ny}'), S))
+
+        self.KB = And(self.KB, Implies(Not(P) & Not(W), safe))
+
+        self.KB = And(self.KB, Or(safe, danger))
+
         if 'B' in percepts:
-            self.KB = And(self.KB, symbols(f'B{x}{y}'))
+            self.KB = And(self.KB, B)
         else:
-            self.KB = And(self.KB, Not(symbols(f'B{x}{y}')))
-        
-        symbols_list_W = self.infer_surroundings('W')
-        right_W = Or(*symbols_list_W)
-        cnf = to_cnf(Equivalent(symbols(f'S{x}{y}'), right_W), True)
-        self.KB = And(self.KB, cnf)
+            self.KB = And(self.KB, Not(B))
+
         if 'S' in percepts:
-            self.KB = And(self.KB, symbols(f'S{x}{y}'))
+            self.KB = And(self.KB, S)
         else:
-            self.KB = And(self.KB, Not(symbols(f'S{x}{y}')))
+            self.KB = And(self.KB, Not(S))
+
+        if 'G' in percepts:
+            self.KB = And(self.KB, G)
+        else:
+            self.KB = And(self.KB, Not(G))
 
         if 'W' in percepts or 'P' in percepts:
             return self.die()
 
-        # Ensure current cell is safe
-        self.KB = And(self.KB, Not(symbols(f'W{x}{y}')), Not(symbols(f'P{x}{y}')))
+        self.KB = And(self.KB, Not(W), Not(P))
         
+                
     def turn_left(self):
         idx = DIRECTIONS.index(self.facing)
         self.facing = DIRECTIONS[(idx - 1) % 4]
@@ -97,14 +133,18 @@ class Agent:
         elif self.facing == 'EAST' and y < self.grid_size:
             self.pos = (x, y+1)
         elif self.facing == 'SOUTH' and x > 1:
-            self.pos = (x-1,y)
+            self.pos = (x-1, y)
         elif self.facing == 'WEST' and y > 1:
             self.pos = (x, y-1)
         else:
             print("Move blocked by boundary")
-            return 0  # No cost if move is blocked
+            return 0  
         print(f"Moving to {self.pos}")
-        return 10  # Cost of moving forward
+
+        if 'S' in self.perceive_current_cell():
+            self.shoot()
+
+        return 10  
         
     def make_safe_move(self, node):
         x, y = node.state
@@ -116,11 +156,12 @@ class Agent:
         ]
 
         for direction, (r, c) in possible_moves:
-            if (1 <= r <= self.grid_size and 1 <= c <= self.grid_size) and (r, c) not in self.visited:
+            if (0 <= r < self.grid_size and 0 <= c < self.grid_size) and (r, c) not in self.visited:
                 is_safe = self.PL_resolution(Not(symbols(f'P{r}{c}'))) and self.PL_resolution(Not(symbols(f'W{r}{c}')))
+                print(self.PL_resolution(Not(symbols(f'P{r}{c}'))), self.PL_resolution(Not(symbols(f'W{r}{c}'))))
                 if is_safe:
                     cost = node.path_cost + self.align_direction(direction) + self.move_forward()
-                    return Node((r,c), node, direction, cost)
+                    return Node((r, c), node, direction, cost)
 
         return None
     
@@ -140,11 +181,31 @@ class Agent:
                 cost += self.turn_left()
         return cost
 
+    def is_safe(self, cell):
+        x, y = cell
+        safe = symbols(f'Safe{x}{y}')
+        return satisfiable(And(self.KB, safe))
+
+    def get_neighbors(self, cell):
+        x, y = cell
+        neighbors = []
+        if x < self.grid_size:
+            neighbors.append((x+1, y))  # North
+        if y > 1:
+            neighbors.append((x, y-1))  # West
+        if y < self.grid_size:
+            neighbors.append((x, y+1))  # East
+        if x > 1:
+            neighbors.append((x-1, y))  # South
+        return neighbors
+
     def explore(self):
         frontier = []
         frontier.append(Node(self.start, None, self.facing, 0))  # (cost, position, direction, path)
+        self.visited = set()
+        self.tracked_path = []
 
-        while len(frontier) != 0:
+        while frontier:
             node = frontier.pop()
             self.pos = node.state
             self.facing = node.action
@@ -158,24 +219,29 @@ class Agent:
                 self.point += 5000
                 return node  # Returning the path to gold
 
-            child = self.make_safe_move(node)
-            if child:
-                frontier.append(child)
-                self.visited.add(child.state)
-                self.tracked_path.append(node.state)
+            neighbors = self.get_neighbors(self.pos)
+            for neighbor in neighbors:
+                if neighbor not in self.visited and self.is_safe(neighbor):
+                    self.visited.add(neighbor)
+                    new_cost = node.path_cost + self.move_forward()
+                    child = Node(neighbor, node, self.facing, new_cost)
+                    frontier.append(child)
+                    self.tracked_path.append(node.state)
+                    break
             else:
                 print("No safe moves left. Backtracking.")
                 if not self.tracked_path:
                     print("No more positions to backtrack to. Exiting.")
                     return None
                 pos = self.tracked_path.pop()
+                self.pos = pos  
                 new_cost = node.path_cost + self.turn_around() + self.move_forward()
                 prev_node = Node(pos, node, self.facing, new_cost)
                 frontier.append(prev_node)
 
         return None
-
-
+    
+        
     def backtrack_to_start(self):
         # Implement a method to backtrack to the starting position
         pass
@@ -239,4 +305,42 @@ class Agent:
         print(f"Agent died at position {self.pos}.")
         exit()
         
+    def infer_wumpus_position(self):
+        for x in range(1, self.grid_size + 1):
+            for y in range(1, self.grid_size + 1):
+                cell_info = self.program.get_cell_info((x, y))
+                if 'W' in cell_info:
+                    return (x, y)
+        return None
 
+    def shoot(self):
+        wumpus_pos = self.infer_wumpus_position()
+        if not wumpus_pos:
+            return False
+
+        wx, wy = wumpus_pos
+        ax, ay = self.pos
+
+        if wx == ax:
+            if wy > ay:
+                desired_direction = 'EAST'
+            else:
+                desired_direction = 'WEST'
+        elif wy == ay:
+            if wx > ax:
+                desired_direction = 'NORTH'
+            else:
+                desired_direction = 'SOUTH'
+        else:
+            print("Wumpus is not in a straight line from the agent.")
+            return False
+
+        self.align_direction(desired_direction)
+        print(f"Shooting arrow towards {desired_direction} to hit Wumpus at {wumpus_pos}")
+
+        self.KB = And(self.KB, Not(symbols(f'W{wx}{wy}')))
+        self.KB = And(self.KB, symbols(f'Safe{wx}{wy}')) 
+        
+        self.program.mark_cell_safe((wx, wy))
+
+        return True
