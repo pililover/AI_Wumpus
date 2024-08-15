@@ -53,7 +53,6 @@ class Agent:
         G = symbols(f'G{x}{y}')
         safe = symbols(f'Safe{x}{y}')
         danger = symbols(f'Danger{x}{y}')
-        glitter = symbols(f'Glitter{x}{y}')
 
         neighbors = self.infer_surroundings('nextTo')
 
@@ -72,7 +71,6 @@ class Agent:
 
         self.KB = And(self.KB, Implies(P, Or(*[symbols(f'B{nx}{ny}') for nx, ny in neighbors])))
         self.KB = And(self.KB, Implies(W, Or(*[symbols(f'S{nx}{ny}') for nx, ny in neighbors])))
-        self.KB = And(self.KB, Equivalent(G, glitter))
         self.KB = And(self.KB, Implies(P, danger))
         self.KB = And(self.KB, Implies(W, danger))
 
