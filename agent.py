@@ -193,7 +193,7 @@ class Agent:
         if 'G' in self.perceive_current_cell():
             print(f"Gold found at {self.pos}!")
             self.point += 5000
-            path = path + [self.pos]
+            # path = path + [self.pos]
             print(f"Explore: {' -> '.join(map(str, path))}")
             print(f"Final score: {self.point}")
             return True
@@ -210,7 +210,7 @@ class Agent:
                 self.visited.add(neighbor)
                 self.align_direction(direction)
                 self.move_forward()
-                if self.dfs(neighbor, path + [neighbor]):
+                if self.dfs(neighbor, path + [self.pos]):
                     return True
                 self.move_backward()
                 self.point -= 10
