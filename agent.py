@@ -213,9 +213,26 @@ class Agent:
                 if self.dfs(neighbor, path + [neighbor]):
                     return True
                 self.move_backward()
+                self.point -= 10
                 self.visited.remove(neighbor)
 
         return False
+
+    def move_backward(self):
+        x, y = self.pos
+        if self.facing == 'NORTH' and x > 1:
+            self.pos = (x - 1, y)
+        elif self.facing == 'EAST' and y > 1:
+            self.pos = (x, y - 1)
+        elif self.facing == 'SOUTH' and x < self.grid_size:
+            self.pos = (x + 1, y)
+        elif self.facing == 'WEST' and y < self.grid_size:
+            self.pos = (x, y + 1)
+        else:
+            print("Move blocked by boundary")
+            return 0
+        print(f"Moving backward to {self.pos}")
+        return 10
 
     def get_neighbors(self, pos):
         x, y = pos
