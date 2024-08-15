@@ -181,65 +181,56 @@ class Agent:
                 cost += self.turn_left()
         return cost
 
-    def is_safe(self, cell):
-        x, y = cell
-        safe = symbols(f'Safe{x}{y}')
-        return satisfiable(And(self.KB, safe))
-
-    def get_neighbors(self, cell):
-        x, y = cell
-        neighbors = []
-        if x < self.grid_size:
-            neighbors.append((x+1, y))  # North
-        if y > 1:
-            neighbors.append((x, y-1))  # West
-        if y < self.grid_size:
-            neighbors.append((x, y+1))  # East
-        if x > 1:
-            neighbors.append((x-1, y))  # South
-        return neighbors
-
     def explore(self):
-        frontier = []
-        frontier.append(Node(self.start, None, self.facing, 0))  # (cost, position, direction, path)
         self.visited = set()
-        self.tracked_path = []
+        start_pos = self.start
+        if self.dfs(start_pos, [start_pos]):
+            return True
+        else:
+            print("No safe path to the gold found.")
+            print(f"Final score: {self.point}")
+            return False
 
-        while frontier:
-            node = frontier.pop()
-            self.pos = node.state
-            self.facing = node.action
+    def dfs(self, pos, path):
+        if 'G' in self.perceive_current_cell():
+            print(f"Gold found at {self.pos}!")
+            self.point += 5000
+            path = path + [self.pos]
+            print(f"Explore: {' -> '.join(map(str, path))}")
+            print(f"Final score: {self.point}")
+            return True
 
-            self.visited.add(self.pos)
-            if self.pos != self.start:
-                self.update_KB()
+        self.visited.add(pos)
+        self.update_KB()
 
-            if 'G' in self.perceive_current_cell():
-                print(f"Gold found at {self.pos}!")
-                self.point += 5000
-                return node  # Returning the path to gold
+        directions = ['NORTH', 'WEST', 'EAST', 'SOUTH']
+        neighbors = self.get_neighbors(pos)
 
-            neighbors = self.get_neighbors(self.pos)
-            for neighbor in neighbors:
-                if neighbor not in self.visited and self.is_safe(neighbor):
-                    self.visited.add(neighbor)
-                    new_cost = node.path_cost + self.move_forward()
-                    child = Node(neighbor, node, self.facing, new_cost)
-                    frontier.append(child)
-                    self.tracked_path.append(node.state)
-                    break
-            else:
-                print("No safe moves left. Backtracking.")
-                if not self.tracked_path:
-                    print("No more positions to backtrack to. Exiting.")
-                    return None
-                pos = self.tracked_path.pop()
-                self.pos = pos  
-                new_cost = node.path_cost + self.turn_around() + self.move_forward()
-                prev_node = Node(pos, node, self.facing, new_cost)
-                frontier.append(prev_node)
+        for direction in directions:
+            neighbor = neighbors.get(direction)
+            if neighbor and neighbor not in self.visited and self.is_safe(neighbor):
+                self.visited.add(neighbor)
+                self.align_direction(direction)
+                self.move_forward()
+                if self.dfs(neighbor, path + [neighbor]):
+                    return True
+                self.move_backward()
+                self.visited.remove(neighbor)
 
-        return None
+        return False
+
+    def get_neighbors(self, pos):
+        x, y = pos
+        return {
+            'NORTH': (x, y + 1) if y + 1 <= self.grid_size else None,
+            'WEST': (x - 1, y) if x - 1 > 0 else None,
+            'EAST': (x + 1, y) if x + 1 <= self.grid_size else None,
+            'SOUTH': (x, y - 1) if y - 1 > 0 else None
+        }
+
+    def is_safe(self, pos):
+        cell_info = self.program.get_cell_info(pos)
+        return 'W' not in cell_info and 'P' not in cell_info
     
         
     def backtrack_to_start(self):
@@ -342,5 +333,9 @@ class Agent:
         self.KB = And(self.KB, symbols(f'Safe{wx}{wy}')) 
         
         self.program.mark_cell_safe((wx, wy))
+        
+        self.point -= 100
+        print(f"Final score: {self.point}")
+
 
         return True
