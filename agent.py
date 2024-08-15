@@ -20,6 +20,7 @@ class Agent:
         self.visited = set()
         self.tracked_path = []
         self.point = 0
+        self.wumpus = True
         
         self.update_KB()
     
@@ -139,8 +140,8 @@ class Agent:
             return 0  
         print(f"Moving to {self.pos}")
 
-        # if 'S' in self.perceive_current_cell():
-        #     self.shoot()
+        if 'S' in self.perceive_current_cell() and self.wumpus:
+            self.shoot()
 
         return 10  
         
@@ -348,6 +349,8 @@ class Agent:
         self.KB = And(self.KB, symbols(f'Safe{wx}{wy}')) 
         
         self.program.mark_cell_safe((wx, wy))
+        self.wumpus = False
+        self.pos = (wx, wy)
         
         self.point -= 100
         print(f"Final score: {self.point}")
