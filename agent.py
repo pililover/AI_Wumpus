@@ -139,8 +139,8 @@ class Agent:
             return 0  
         print(f"Moving to {self.pos}")
 
-        if 'S' in self.perceive_current_cell():
-            self.shoot()
+        # if 'S' in self.perceive_current_cell():
+        #     self.shoot()
 
         return 10  
         
