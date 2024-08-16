@@ -1,5 +1,6 @@
 from sympy import symbols, Not, And, Or, Implies, Equivalent
 from sympy.logic.boolalg import to_cnf
+from sympy.logic.inference import satisfiable
 from itertools import combinations
 from queue import PriorityQueue
 from node import Node
@@ -75,14 +76,16 @@ class Agent:
         idx = DIRECTIONS.index(self.facing)
         self.facing = DIRECTIONS[(idx - 1) % 4]
         cost = 10
-        print(f"Turning to {self.facing}")
+        self.program.add_action(f"Turning to {self.facing}")
+        self.program.move_agent(self.pos, self.facing, 1)
         return cost
         
     def turn_right(self):
         idx = DIRECTIONS.index(self.facing)
         self.facing = DIRECTIONS[(idx + 1) % 4]
         cost = 10
-        print(f"Turning to {self.facing}")
+        self.program.add_action(f"Turning to {self.facing}")
+        self.program.move_agent(self.pos, self.facing, 1)
         return cost
     
     def turn_around(self):
@@ -97,14 +100,18 @@ class Agent:
         elif self.facing == 'EAST' and y < self.grid_size:
             self.pos = (x, y+1)
         elif self.facing == 'SOUTH' and x > 1:
-            self.pos = (x-1,y)
+            self.pos = (x-1, y)
         elif self.facing == 'WEST' and y > 1:
             self.pos = (x, y-1)
         else:
-            print("Move blocked by boundary")
-            return 0  # No cost if move is blocked
-        print(f"Moving to {self.pos}")
-        return 10  # Cost of moving forward
+            self.program.add_action("Move blocked by boundary")
+            return 0  
+        self.program.add_action(f"Moving to {self.pos}")
+
+        # if 'S' in self.perceive_current_cell():
+        #     self.shoot()
+
+        return 10  
         
     def make_safe_move(self, node):
         x, y = node.state
@@ -116,11 +123,12 @@ class Agent:
         ]
 
         for direction, (r, c) in possible_moves:
-            if (1 <= r <= self.grid_size and 1 <= c <= self.grid_size) and (r, c) not in self.visited:
+            if (0 <= r < self.grid_size and 0 <= c < self.grid_size) and (r, c) not in self.visited:
                 is_safe = self.PL_resolution(Not(symbols(f'P{r}{c}'))) and self.PL_resolution(Not(symbols(f'W{r}{c}')))
+                print(self.PL_resolution(Not(symbols(f'P{r}{c}'))), self.PL_resolution(Not(symbols(f'W{r}{c}'))))
                 if is_safe:
                     cost = node.path_cost + self.align_direction(direction) + self.move_forward()
-                    return Node((r,c), node, direction, cost)
+                    return Node((r, c), node, direction, cost)
 
         return None
     
@@ -143,18 +151,19 @@ class Agent:
     def explore(self):
         frontier = []
         frontier.append(Node(self.start, None, self.facing, 0))  # (cost, position, direction, path)
-
+        
         while len(frontier) != 0:
             node = frontier.pop()
             self.pos = node.state
             self.facing = node.action
+            self.program.move_agent(self.pos, self.facing, 1)
 
             self.visited.add(self.pos)
             if self.pos != self.start:
                 self.update_KB()
 
             if 'G' in self.perceive_current_cell():
-                print(f"Gold found at {self.pos}!")
+                self.program.add_action(f"Gold found at {self.pos}!")
                 self.point += 5000
                 return node  # Returning the path to gold
 
@@ -164,9 +173,9 @@ class Agent:
                 self.visited.add(child.state)
                 self.tracked_path.append(node.state)
             else:
-                print("No safe moves left. Backtracking.")
+                self.program.add_action("No safe moves left. Backtracking.")
                 if not self.tracked_path:
-                    print("No more positions to backtrack to. Exiting.")
+                    self.program.add_action("No more positions to backtrack to. Exiting.")
                     return None
                 pos = self.tracked_path.pop()
                 new_cost = node.path_cost + self.turn_around() + self.move_forward()
@@ -236,7 +245,7 @@ class Agent:
                 return False
 
     def die(self):
-        print(f"Agent died at position {self.pos}.")
+        self.program.add_action(f"Agent died at position {self.pos}.")
         exit()
         
 
