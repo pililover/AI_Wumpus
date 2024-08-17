@@ -72,27 +72,60 @@ class Agent:
         # Ensure current cell is safe
         self.KB = And(self.KB, Not(symbols(f'W{x}{y}')), Not(symbols(f'P{x}{y}')))
         
-    def turn_left(self):
-        idx = DIRECTIONS.index(self.facing)
-        self.facing = DIRECTIONS[(idx - 1) % 4]
-        cost = 10
-        self.program.add_action(f"Turning to {self.facing}")
-        self.program.move_agent(self.pos, self.facing, 1)
-        return cost
+    def turn_left(self, current_direction, action):
+        idx = DIRECTIONS.index(current_direction)
+        current_direction = DIRECTIONS[(idx - 1) % 4]
+        if action:
+            self.program.add_action(f"Turning to {current_direction}")
+            self.program.move_agent(self.pos, current_direction, 1)
+        return current_direction
         
-    def turn_right(self):
-        idx = DIRECTIONS.index(self.facing)
-        self.facing = DIRECTIONS[(idx + 1) % 4]
-        cost = 10
-        self.program.add_action(f"Turning to {self.facing}")
-        self.program.move_agent(self.pos, self.facing, 1)
-        return cost
+    def turn_right(self, current_direction, action):
+        idx = DIRECTIONS.index(current_direction)
+        current_direction = DIRECTIONS[(idx + 1) % 4]
+        if action:
+            self.program.add_action(f"Turning to {current_direction}")
+            self.program.move_agent(self.pos, current_direction, 1)
+        return current_direction
     
-    def turn_around(self):
-        cost = 0
-        cost = cost + self.turn_right() + self.turn_right()
-        return cost    
+    def opposite_direction(self, direction):
+        candidates = {
+            'NORTH': 'SOUTH',
+            'SOUTH': 'NORTH',
+            'EAST': 'WEST',
+            'WEST': 'EAST'
+        }
+        return candidates[direction]
+
+    def align_direction(self, current_direction, desired_direction, action):
+        current_idx = DIRECTIONS.index(current_direction)
+        desired_idx = DIRECTIONS.index(desired_direction)
         
+        steps_right = (desired_idx - current_idx) % 4
+        steps_left = (current_idx - desired_idx) % 4
+
+        cost = 0
+        if action:
+            if steps_right <= steps_left:
+                for _ in range(steps_right):
+                    current_direction = self.turn_right(current_direction, True)
+                    cost += 10
+            else:
+                for _ in range(steps_left):
+                    current_direction = self.turn_left(current_direction, True)
+                    cost += 10
+            return current_direction, cost
+        
+        if steps_right <= steps_left:
+            for _ in range(steps_right):
+                current_direction = self.turn_right(current_direction, False)
+                cost += 10
+        else:
+            for _ in range(steps_left):
+                current_direction = self.turn_left(current_direction, False)
+                cost += 10
+        return current_direction, cost
+
     def move_forward(self):
         x, y = self.pos
         if self.facing == 'NORTH' and x < self.grid_size:
@@ -118,35 +151,32 @@ class Agent:
         possible_moves = [
             ('NORTH', (x+1, y)),
             ('SOUTH', (x-1, y)),
-            ('WEST', (x, y-1)),
-            ('EAST', (x, y+1))
+            ('EAST', (x, y+1)),
+            ('WEST', (x, y-1))
         ]
 
+        # Calculate the alignment cost for each possible move
+        moves_with_costs = []
         for direction, (r, c) in possible_moves:
-            if (0 <= r < self.grid_size and 0 <= c < self.grid_size) and (r, c) not in self.visited:
-                is_safe = self.PL_resolution(Not(symbols(f'P{r}{c}'))) and self.PL_resolution(Not(symbols(f'W{r}{c}')))
-                print(self.PL_resolution(Not(symbols(f'P{r}{c}'))), self.PL_resolution(Not(symbols(f'W{r}{c}'))))
-                if is_safe:
-                    cost = node.path_cost + self.align_direction(direction) + self.move_forward()
-                    return Node((r, c), node, direction, cost)
+            if 1 <= r <= self.grid_size and 1 <= c <= self.grid_size and (r, c) not in self.visited:
+                _, alignment_cost = self.align_direction(self.facing, direction, False)
+                moves_with_costs.append((direction, (r, c), alignment_cost))
+
+        # Sort the possible moves by alignment cost (fewest turns required)
+        moves_with_costs.sort(key=lambda move: move[2])  # Sort by alignment_cost
+
+        for direction, (r, c), alignment_cost in moves_with_costs:
+            is_safe = self.PL_resolution(Not(symbols(f'P{r}{c}'))) and self.PL_resolution(Not(symbols(f'W{r}{c}')))
+            if is_safe:
+                # Move in the aligned direction
+                self.facing, _ = self.align_direction(self.facing, direction, True) # Update the agent's facing direction
+                move_cost = self.move_forward()
+                total_cost = alignment_cost + move_cost
+                self.point -= total_cost
+                return Node((r, c), node, direction, total_cost)
 
         return None
-    
-    def align_direction(self, desired_direction):
-        current_idx = DIRECTIONS.index(self.facing)
-        desired_idx = DIRECTIONS.index(desired_direction)
-        
-        steps_right = (desired_idx - current_idx) % 4
-        steps_left = (current_idx - desired_idx) % 4
 
-        cost = 0
-        if steps_right <= steps_left:
-            for _ in range(steps_right):
-                cost += self.turn_right()
-        else:
-            for _ in range(steps_left):
-                cost += self.turn_left()
-        return cost
 
     def explore(self):
         frontier = []
@@ -171,14 +201,16 @@ class Agent:
             if child:
                 frontier.append(child)
                 self.visited.add(child.state)
-                self.tracked_path.append(node.state)
+                self.tracked_path.append((node.state, self.facing))
             else:
                 self.program.add_action("No safe moves left. Backtracking.")
                 if not self.tracked_path:
                     self.program.add_action("No more positions to backtrack to. Exiting.")
                     return None
-                pos = self.tracked_path.pop()
-                new_cost = node.path_cost + self.turn_around() + self.move_forward()
+                pos, direction = self.tracked_path.pop()
+                self.facing, alignment_cost = self.align_direction(self.facing, self.opposite_direction(direction), True)
+                new_cost = alignment_cost + self.move_forward()
+                self.point -= new_cost
                 prev_node = Node(pos, node, self.facing, new_cost)
                 frontier.append(prev_node)
 
