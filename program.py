@@ -1,28 +1,41 @@
 import pygame
 import sys
 import time
-import threading
 from agent import Agent
 
 class Program:
     def __init__(self, input_file):
-        self.map_files = ['map1.txt', 'map2.txt', 'map3.txt', 'map4.txt', 'map5.txt']  # Thêm các file bản đồ
+        self.map_files = ['map1.txt', 'map2.txt', 'map3.txt', 'map4.txt', 'map5.txt']
         self.load_map(input_file)
-        self.left_width = 250  # Tăng chiều rộng cho cột nút
+        self.left_width = 250
         pygame.init()
         self.set_screen_size()
         self.button_surface = pygame.Surface((self.left_width, self.height))
-        
         pygame.display.set_caption("Wumpus World")
+        self.button_selected = 0
         self.agent_pos = [((1, 1), 'NORTH')]
         self.actions_log = []
         self.step = 0
         self.scroll_y = 0
-        self.map_buttons = [pygame.Rect(10, 10 + i * 60, 100, 50) for i in range(5)]  # Tạo các nút chọn bản đồ
+        self.visited = set()
+        self.map_buttons = [pygame.Rect(10, 10 + i * 60, 100, 50) for i in range(5)]
         self.control_buttons = {
             'run': pygame.Rect(10, 310, 100, 50),
             'back': pygame.Rect(10, 370, 100, 50),
             'forward': pygame.Rect(10, 430, 100, 50),
+        }
+        
+        self.object = {
+            '.W.': ('./assets/wumpus.png', 'Wumpus'),
+            '.P.': ('./assets/pit.png', 'Pit'),
+            '.B.': ('./assets/breeze.png', 'Breeze'),
+            '.S.': ('./assets/stench.png', 'Stench'),
+            '.G.': ('./assets/gold.png', 'Gold'),
+            '.P_G.': ('./assets/poisonous_gas.png', 'Poisonous Gas'),
+            '.H_P.': ('/assets/healing_potion.png', 'Healing Potion'),
+            '.W_P.': ('./assets/whiff.png', 'Whiff'),
+            '.G_L.': ('./assets/glow.png', 'Glow'),
+            '.V.': ('./assets/wumpus.png', 'Visited')
         }
 
         self.running = False
@@ -31,16 +44,15 @@ class Program:
         self.draw_action_log()
 
     def set_screen_size(self):
-        """Thiết lập kích thước màn hình dựa trên kích thước của bản đồ."""
         self.cell_size = 75
-        self.width = self.size * self.cell_size + 500  # Additional space for percepts display
-        self.height = max(self.size * self.cell_size, 600)  # Chiều cao tối thiểu để hiển thị đầy đủ nút
+        self.width = self.size * self.cell_size + 600
+        self.height = max(self.size * self.cell_size, 800)
         self.screen = pygame.display.set_mode((self.width, self.height))
 
     def load_map(self, input_file):
         self.map, self.size = self.read_map(input_file)
         self.update_percepts()
-        self.set_screen_size()  # Cập nhật lại kích thước màn hình khi nạp bản đồ mới
+        self.set_screen_size()
 
     def read_map(self, input_file):
         with open(input_file, 'r') as f:
@@ -49,44 +61,41 @@ class Program:
             for i in range(size):
                 line = [cell for cell in f.readline().strip().split('.')]
                 for j, cell in enumerate(line):
-                    if cell != '-':
-                        grid[i][j] = cell
+                    elements = cell.split(' ')
+                    for element in elements:
+                        grid[i][j] += ' .' + element + '. '
         return grid, size
 
     def update_percepts(self):
         for i in range(self.size):
             for j in range(self.size):
-                if self.map[i][j][0] != '-':
-                    if 'P_G' in self.map[i][j]:
-                        self.add_percept(i, j, 'W_P')
-                    elif 'H_P' in self.map[i][j]:
-                        self.add_percept(i, j, 'G_L')
-                    elif 'W' in self.map[i][j]:
-                        self.add_percept(i, j, 'S')
-                    elif 'P' in self.map[i][j]:
-                        self.add_percept(i, j, 'B')
+                if '.P_G.' in self.map[i][j]:
+                    self.add_percept(i, j, 'W_P')
+                if '.H_P.' in self.map[i][j]:
+                    self.add_percept(i, j, 'G_L')
+                if '.W.' in self.map[i][j]:
+                    self.add_percept(i, j, 'S')
+                if '.P.' in self.map[i][j]:
+                    self.add_percept(i, j, 'B')
                         
     def add_percept(self, x, y, percept):
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nx, ny = x + dx, y + dy
             if 0 <= nx < self.size and 0 <= ny < self.size:
-                self.map[nx][ny] += ' ' + percept
-                
+                self.map[nx][ny] += ' .' + percept + '. '
+            
     def move_agent(self, pos, direction, step):
         time.sleep(0.5) 
         if self.agent_pos[self.step][0] is not None:
             self.clear_agent(self.agent_pos[self.step][0])
         self.agent_pos.append((pos, direction))
+        self.visited.add(pos)
         self.step += step
         self.draw_grid()
         self.draw_agent(pos, direction)
         self.show_percepts(pos)
         self.screen.blit(self.button_surface, (0, 0))
         pygame.display.flip()
-                        
-    def mark_visited(self, pos):
-        x, y = pos
-        self.map[self.size - x][y - 1] += ' V'
     
     def clear_agent(self, pos):
         x, y = pos
@@ -116,9 +125,9 @@ class Program:
 
     def draw_action_log(self):
         log_x = self.left_width + self.size * self.cell_size + 10
-        log_y = self.height // 2  # Start at the middle of the screen
-        log_width = self.width - log_x - 10  # Use the remaining space on the right side
-        log_height = self.height // 2 - 10  # Use only the lower half of the screen
+        log_y = self.height // 2 
+        log_width = self.width - log_x - 10
+        log_height = self.height // 2 - 10
         
         font = pygame.font.SysFont(None, 24)
         max_visible_actions = log_height // 30
@@ -130,12 +139,10 @@ class Program:
             action_offset_y = log_y + 10 + index * 30
             self.screen.blit(action_text, (log_x + 10, action_offset_y))
 
-        # Draw scroll bar
         if len(self.actions_log) > max_visible_actions:
             scrollbar_height = log_height * max_visible_actions / len(self.actions_log)
             scrollbar_y = log_y + (self.scroll_y / len(self.actions_log)) * log_height
             pygame.draw.rect(self.screen, (150, 150, 150), (log_x + log_width - 15, scrollbar_y, 10, scrollbar_height))
-            
         pygame.display.flip()
 
     def handle_scroll(self, event):
@@ -148,47 +155,68 @@ class Program:
                 if self.scroll_y < len(self.actions_log) - 1:
                     self.scroll_y += 1
                     
+    def update_status(self, health, point):
+        pygame.draw.rect(self.button_surface, (255, 255, 255), (self.left_width / 2, 0, self.left_width / 2, 100))
+        font = pygame.font.SysFont(None, 24)
+        health_text = font.render(f'Health: {health}', True, (0, 0, 0))
+        point_text = font.render(f'Point: {point}', True, (0, 0, 0))
+        
+        self.button_surface.blit(health_text, (self.left_width / 2, 10))
+        self.button_surface.blit(point_text, (self.left_width / 2, 50))
+        self.screen.blit(self.button_surface, (0, 0))
+        pygame.display.flip()
+
+    def select_button(self, button):
+        pygame.draw.rect(self.button_surface, (100, 100, 100), self.map_buttons[self.button_selected])
+        map_text = pygame.font.SysFont(None, 24).render(f'Map {self.button_selected + 1}', True, (255, 255, 255))
+        self.button_surface.blit(map_text, (self.map_buttons[self.button_selected].x + 10, self.map_buttons[self.button_selected].y + 15))
+        
+        pygame.draw.rect(self.button_surface, (255, 255, 0), self.map_buttons[button])
+        map_text = pygame.font.SysFont(None, 24).render(f'Map {button + 1}', True, (0, 0, 0))
+        self.button_surface.blit(map_text, (self.map_buttons[button].x + 10, self.map_buttons[button].y + 15))
+        self.button_selected = button
+                    
     def draw_buttons(self):
         self.button_surface.fill((255, 255, 255))
-        """Draw map selection buttons on the left side of the map."""
         for i, map_button in enumerate(self.map_buttons):
             pygame.draw.rect(self.button_surface, (100, 100, 100), map_button)
             map_text = pygame.font.SysFont(None, 24).render(f'Map {i + 1}', True, (255, 255, 255))
             self.button_surface.blit(map_text, (map_button.x + 10, map_button.y + 15))
+        
+        pygame.draw.rect(self.button_surface, (255, 255, 0), self.map_buttons[self.button_selected])
+        map_text = pygame.font.SysFont(None, 24).render(f'Map {self.button_selected + 1}', True, (0, 0, 0))
+        self.button_surface.blit(map_text, (self.map_buttons[self.button_selected].x + 10, self.map_buttons[self.button_selected].y + 15))
 
-        """Draw control buttons below map selection buttons."""
-        pygame.draw.rect(self.button_surface, (0, 128, 0), self.control_buttons['run'])  # Green button for "Run"
-        pygame.draw.rect(self.button_surface, (0, 0, 128), self.control_buttons['back'])  # Blue button for "Back"
-        pygame.draw.rect(self.button_surface, (128, 128, 0), self.control_buttons['forward'])  # Yellow button for "Forward"
+        pygame.draw.rect(self.button_surface, (0, 128, 0), self.control_buttons['run'])
+        pygame.draw.rect(self.button_surface, (0, 0, 128), self.control_buttons['back']) 
+        pygame.draw.rect(self.button_surface, (128, 128, 0), self.control_buttons['forward'])
 
-        # Draw control button labels
         font = pygame.font.SysFont(None, 24)
         run_text = font.render('Run', True, (255, 255, 255))
         back_text = font.render('Back', True, (255, 255, 255))
         forward_text = font.render('Forward', True, (255, 255, 255))
-
+        health_text = font.render(f'Health: {100}', True, (0, 0, 0))
+        point_text = font.render(f'Point: {0}', True, (0, 0, 0))
+        
+        self.button_surface.blit(health_text, (self.left_width / 2, 10))
+        self.button_surface.blit(point_text, (self.left_width / 2, 50))
         self.button_surface.blit(run_text, (self.control_buttons['run'].x + 10, self.control_buttons['run'].y + 15))
         self.button_surface.blit(back_text, (self.control_buttons['back'].x + 10, self.control_buttons['back'].y + 15))
         self.button_surface.blit(forward_text, (self.control_buttons['forward'].x + 10, self.control_buttons['forward'].y + 15))
 
         self.screen.blit(self.button_surface, (0, 0))
-        pygame.display.flip()
         
     def handle_button_click(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
-            # Handle map selection
             for i, map_button in enumerate(self.map_buttons):
                 if map_button.collidepoint(event.pos):
+                    self.select_button(i)
+                    self.reset_map()
                     self.load_map(self.map_files[i])
-                    self.agent_pos = [((1, 1), 'NORTH')]
-                    self.actions_log = []
-                    self.step = 0
-                    self.running = False
                     self.draw_grid()
                     self.draw_action_log()
-                    return  # Stop checking other buttons
+                    return
 
-            # Handle control buttons
             if self.control_buttons['run'].collidepoint(event.pos):
                 self.running = True
             elif self.control_buttons['back'].collidepoint(event.pos):
@@ -217,49 +245,52 @@ class Program:
             else:
                 percepts_count[element] = 1
 
-        object = {
-            'W': ('./assets/wumpus.png', 'Wumpus'),
-            'P': ('./assets/pit.png', 'Pit'),
-            'B': ('./assets/breeze.png', 'Breeze'),
-            'S': ('./assets/stench.png', 'Stench'),
-            'G': ('./assets/gold.png', 'Gold'),
-            'P_G': ('./assets/poisonous_gas.png', 'Poisonous Gas'),
-            'H_P': ('/assets/healing_potion.png', 'Healing Potion'),
-            'W_P': ('./assets/whiff.png', 'Whiff'),
-            'G_L': ('./assets/glow.png', 'Glow'),
-            'V': ('./assets/wumpus.png', 'Visited')
-        }
-
         offset_x = self.left_width + self.size * self.cell_size + 10 
         offset_y = 10 
         for percept, count in percepts_count.items():
-            if percept in object:
-                image = pygame.image.load(object[percept][0])
+            if percept in self.object:
+                image = pygame.image.load(self.object[percept][0])
                 image = pygame.transform.scale(image, (50, 50)) 
-                text = pygame.font.SysFont(None, 24).render(object[percept][1], True, (0, 0, 0))
+                text = pygame.font.SysFont(None, 24).render(self.object[percept][1], True, (0, 0, 0))
                 self.screen.blit(text, (offset_x, offset_y + 10))  
-                self.screen.blit(image, (offset_x + len(object[percept][1] * 15), offset_y)) 
+                self.screen.blit(image, (offset_x + 60, offset_y - 10)) 
                 count_text = pygame.font.SysFont(None, 24).render(f"x{count}", True, (0, 0, 0))
-                self.screen.blit(count_text, (offset_x + 60, offset_y + 10)) 
+                self.screen.blit(count_text, (offset_x + 120, offset_y + 10)) 
                 offset_y += 60 
-
         pygame.display.flip()
 
     def draw_grid(self):
-        self.screen.fill((255, 255, 255)) 
+        self.screen.fill((255, 255, 255))
         for i in range(self.size):
             for j in range(self.size):
                 rect = pygame.Rect(self.left_width + j * self.cell_size, i * self.cell_size, self.cell_size, self.cell_size)
-                pygame.draw.rect(self.screen, (0, 0, 0), rect, 1) 
-                font = pygame.font.SysFont(None, 30)
-                if self.map[i][j] == '-':
-                    continue
-                text = font.render(self.map[i][j], True, (0, 0, 0))
-                self.screen.blit(text, (self.left_width + j * self.cell_size + 5, i * self.cell_size + 5))
-                
+                cell_pos = (self.size - i, j + 1)
+
+                if cell_pos in self.visited:
+                    color = (255, 255, 255)
+                    pygame.draw.rect(self.screen, color, rect)
+                    elements = self.map[i][j].split(' ')
+                    text_lines = [self.object[element][1] for element in elements if element in self.object]
+                    for line_idx, raw_text in enumerate(text_lines):
+                        font = pygame.font.SysFont(None, 24)
+                        text = font.render(raw_text, True, (0, 0, 0))
+                        self.screen.blit(text, (self.left_width + j * self.cell_size + 5, i * self.cell_size + 5 + line_idx * 24))
+                else:
+                    color = (192, 192, 192)
+                    pygame.draw.rect(self.screen, color, rect)
+
+                pygame.draw.rect(self.screen, (0, 0, 0), rect, 1)
         self.screen.blit(self.button_surface, (0, 0))
         pygame.display.flip()
 
+    def reset_map(self):
+        self.step = 0
+        self.actions_log = []
+        self.agent_pos = [((1, 1), 'NORTH')]
+        self.visited = set()
+        self.running = False
+        self.update_status(100, 0)
+        
     def run(self):
         running = True
         while running:
@@ -270,16 +301,13 @@ class Program:
                     self.handle_button_click(event)
                     self.handle_scroll(event)
             if self.running:
-                self.step = 0
-                self.actions_log = []
-                self.agent_pos = [((1, 1), 'NORTH')]
+                self.reset_map()
                 self.agent = Agent(self)
                 self.agent.explore()
-                self.running = False
                 self.draw_grid()
                 self.draw_agent(self.agent_pos[self.step][0], self.agent_pos[self.step][1])
                 self.screen.blit(self.button_surface, (0, 0))
-            
+                            
             self.show_percepts(self.agent_pos[self.step][0])
             self.draw_action_log()
             pygame.display.update()
@@ -302,3 +330,4 @@ class Program:
 
     def mark_cell_safe(self, pos):
         self.update_cellinfor(pos,'-')
+        
