@@ -15,20 +15,23 @@ class Agent:
         self.pos = (1, 1)
         self.program = program
         self.grid_size = program.size
-        self.tracked_map = [[0 for _ in range(self.grid_size)] for _ in range(self.grid_size)]
+        self.tracked_visited = [[False for _ in range(self.grid_size)] for _ in range(self.grid_size)]
+        self.tracked_visited[self.grid_size - 1][0] = True
         self.facing = 'NORTH'
         self.visited = set()
+        self.safe_spots = set()
+        self.not_unsafe_spots = set()
         self.tracked_path = []
         self.point = 0
-        
+        self.hp = 100
+        self.available_hp = 0
         self.update_KB()
     
     def perceive_current_cell(self):
-        return self.program.get_cell_info(self.pos)
+        return self.program.get_cell_info(self.pos).split(' ')
     
-    def infer_surroundings(self, element):
-        x, y = self.pos
-        symbols_list = []
+    def neighbor_cells(self, x, y):
+        neighbors = []
         surroundings = [
             (x+1, y),
             (x-1, y),
@@ -39,36 +42,69 @@ class Agent:
         for (i, j) in surroundings:
             if i <= 0 or i > self.grid_size or j <= 0 or j > self.grid_size:
                 continue
-            symbols_list.append(symbols(f'{element}{i}{j}'))
+            neighbors.append((i, j))
             
-        return symbols_list
+        return neighbors
     
     def update_KB(self):
         x, y = self.pos
         percepts = self.perceive_current_cell()
-
+        Ps = []
+        Ws = []
+        PGs = []
+        HPs = []
+        
+        for r, c in self.neighbor_cells(x, y):
+            Ps.append(symbols(f'P{r}{c}'))
+            Ws.append(symbols(f'W{r}{c}'))
+            PGs.append(symbols(f'P_G{r}{c}'))
+            HPs.append(symbols(f'H_P{r}{c}'))
+        
         # Update KB with inferences based on percepts.
-        symbols_list_P = self.infer_surroundings('P')
-        right_P = Or(*symbols_list_P)
-        cnf = to_cnf(Equivalent(symbols(f'B{x}{y}'), right_P), True)
-        self.KB = And(self.KB, cnf)
-        if 'B' in percepts:
+        # Breeze percepts
+        
+        self.KB = And(self.KB, to_cnf(Equivalent(symbols(f'B{x}{y}'), Or(*Ps)), True))
+        if '.B.' in percepts:
             self.KB = And(self.KB, symbols(f'B{x}{y}'))
         else:
             self.KB = And(self.KB, Not(symbols(f'B{x}{y}')))
         
-        symbols_list_W = self.infer_surroundings('W')
-        right_W = Or(*symbols_list_W)
-        cnf = to_cnf(Equivalent(symbols(f'S{x}{y}'), right_W), True)
-        self.KB = And(self.KB, cnf)
-        if 'S' in percepts:
+        # Stench percepts
+        self.KB = And(self.KB, to_cnf(Equivalent(symbols(f'S{x}{y}'), Or(*Ws)), True))
+        if '.S.' in percepts:
             self.KB = And(self.KB, symbols(f'S{x}{y}'))
         else:
             self.KB = And(self.KB, Not(symbols(f'S{x}{y}')))
-
-        if 'W' in percepts or 'P' in percepts:
+            
+        # Whiff percepts
+        self.KB = And(self.KB, to_cnf(Equivalent(symbols(f'W_P{x}{y}'), Or(*PGs)), True))
+        self.KB = And(self.KB, to_cnf(Equivalent(Not(symbols(f'W_P{x}{y}')), And(*[Not(PG) for PG in PGs])), True))
+        if '.W_P.' in percepts:
+            self.KB = And(self.KB, symbols(f'W_P{x}{y}'))
+        else:
+            self.KB = And(self.KB, Not(symbols(f'W_P{x}{y}')))
+        
+        # Glow percepts
+        self.KB = And(self.KB, to_cnf(Equivalent(symbols(f'G_L{x}{y}'), Or(*HPs)), True))
+        self.KB = And(self.KB, to_cnf(Equivalent(Not(symbols(f'G_L{x}{y}')), And(*[Not(HP) for HP in HPs])), True))
+        if '.G_L.' in percepts:
+            self.KB = And(self.KB, symbols(f'G_L{x}{y}'))
+        else:
+            self.KB = And(self.KB, Not(symbols(f'G_L{x}{y}')))
+        
+        if '.P_G.' in percepts:
+            self.hp -= 25
+            self.program.update_status(self.hp, self.point, self.available_hp)
+        else:
+            self.KB = And(self.KB, Not(symbols(f'P_G{x}{y}')))
+        
+        if '.H_P.' in percepts:
+            self.KB = And(self.KB, symbols(f'H_P{x}{y}'))
+        else:
+            self.KB = And(self.KB, Not(symbols(f'H_P{x}{y}')))
+        
+        if '.W.' in percepts or '.P.' in percepts:
             return self.die()
-
         # Ensure current cell is safe
         self.KB = And(self.KB, Not(symbols(f'W{x}{y}')), Not(symbols(f'P{x}{y}')))
         
@@ -97,7 +133,7 @@ class Agent:
         }
         return candidates[direction]
 
-    def align_direction(self, current_direction, desired_direction, action):
+    def align_direction_cost(self, current_direction, desired_direction):
         current_idx = DIRECTIONS.index(current_direction)
         desired_idx = DIRECTIONS.index(desired_direction)
         
@@ -105,16 +141,6 @@ class Agent:
         steps_left = (current_idx - desired_idx) % 4
 
         cost = 0
-        if action:
-            if steps_right <= steps_left:
-                for _ in range(steps_right):
-                    current_direction = self.turn_right(current_direction, True)
-                    cost += 10
-            else:
-                for _ in range(steps_left):
-                    current_direction = self.turn_left(current_direction, True)
-                    cost += 10
-            return current_direction, cost
         
         if steps_right <= steps_left:
             for _ in range(steps_right):
@@ -124,7 +150,26 @@ class Agent:
             for _ in range(steps_left):
                 current_direction = self.turn_left(current_direction, False)
                 cost += 10
-        return current_direction, cost
+        return cost
+
+    def align_direction(self, current_direction, desired_direction):
+        current_idx = DIRECTIONS.index(current_direction)
+        desired_idx = DIRECTIONS.index(desired_direction)
+        
+        steps_right = (desired_idx - current_idx) % 4
+        steps_left = (current_idx - desired_idx) % 4
+        
+        if steps_right <= steps_left:
+            for _ in range(steps_right):
+                current_direction = self.turn_right(current_direction, True)
+                self.point -= 10
+                self.program.update_status(self.hp, self.point, self.available_hp)
+        else:
+            for _ in range(steps_left):
+                current_direction = self.turn_left(current_direction, True)
+                self.point -= 10
+                self.program.update_status(self.hp, self.point, self.available_hp)
+        return current_direction
 
     def move_forward(self):
         x, y = self.pos
@@ -144,7 +189,11 @@ class Agent:
         # if 'S' in self.perceive_current_cell():
         #     self.shoot()
 
-        return 10  
+        return 10
+    
+    def shoot(self):
+        x, y = self.pos
+        
         
     def make_safe_move(self, node):
         x, y = node.state
@@ -154,64 +203,92 @@ class Agent:
             ('EAST', (x, y+1)),
             ('WEST', (x, y-1))
         ]
-
+        actions = ['climb', 'grab', 'heal', 'move']
+        if self.hp <= 50 and self.available_hp > 0:
+            self.point -= 10
+            self.available_hp -= 1
+            self.hp += 25
+            self.program.update_status(self.hp, self.point, self.available_hp)
+            self.program.add_action(f"Using healing potion")
+            return Node((x,y), node, (actions[2], self.facing), 0)
+        
+        if self.available_hp <= 3 and '.H_P.' in self.perceive_current_cell():
+            self.point -= 10
+            self.available_hp += 1
+            self.program.update_status(self.hp, self.point, self.available_hp)
+            self.program.remove_element((x,y), 'H_P')
+            self.program.add_action(f"Picking up healing potion at ({x, y})")
+            return Node((x,y), node, (actions[1], self.facing), 0)
+        
         # Calculate the alignment cost for each possible move
         moves_with_costs = []
         for direction, (r, c) in possible_moves:
             if 1 <= r <= self.grid_size and 1 <= c <= self.grid_size and (r, c) not in self.visited:
-                _, alignment_cost = self.align_direction(self.facing, direction, False)
+                alignment_cost = self.align_direction_cost(self.facing, direction)
                 moves_with_costs.append((direction, (r, c), alignment_cost))
 
         # Sort the possible moves by alignment cost (fewest turns required)
         moves_with_costs.sort(key=lambda move: move[2])  # Sort by alignment_cost
 
+        wumpus_cells = set()
         for direction, (r, c), alignment_cost in moves_with_costs:
-            is_safe = self.PL_resolution(Not(symbols(f'P{r}{c}'))) and self.PL_resolution(Not(symbols(f'W{r}{c}')))
-            if is_safe:
+            # Check whether the cell has no pit
+            not_pit = self.PL_resolution(Not(symbols(f'P{r}{c}')))
+            # Check whether the cell has no wumpus
+            not_wumpus = self.PL_resolution(Not(symbols(f'W{r}{c}')))
+            # Check whether the cell has poison
+            not_poison = self.PL_resolution(Not(symbols(f'P_G{r}{c}')))
+            if not_pit and not_wumpus:
+                if self.hp < 75 and not not_poison:
+                    continue
+                
                 # Move in the aligned direction
-                self.facing, _ = self.align_direction(self.facing, direction, True) # Update the agent's facing direction
-                move_cost = self.move_forward()
-                total_cost = alignment_cost + move_cost
-                self.point -= total_cost
-                return Node((r, c), node, direction, total_cost)
-
+                self.facing = self.align_direction(self.facing, direction) # Update the agent's facing direction
+                total_cost = alignment_cost + self.move_forward()
+                self.point -= total_cost - alignment_cost
+                return Node((r, c), node, (actions[3], direction), total_cost)
+        
         return None
 
 
     def explore(self):
         frontier = []
-        frontier.append(Node(self.start, None, self.facing, 0))  # (cost, position, direction, path)
+        frontier.append(Node(self.start, None, ('move', self.facing), 0))  # (cost, position, direction, path)
         
         while len(frontier) != 0:
             node = frontier.pop()
             self.pos = node.state
-            self.facing = node.action
-            self.program.move_agent(self.pos, self.facing, 1)
+            action, self.facing = node.action
+            if action == 'move':
+                self.program.move_agent(self.pos, self.facing, 1)
+                self.program.update_status(self.hp, self.point, self.available_hp)
 
             self.visited.add(self.pos)
             if self.pos != self.start:
                 self.update_KB()
 
-            if 'G' in self.perceive_current_cell():
+            if '.G.' in self.perceive_current_cell():
                 self.program.add_action(f"Gold found at {self.pos}!")
                 self.point += 5000
+                self.program.update_status(self.hp, self.point, self.available_hp)
                 return node  # Returning the path to gold
 
             child = self.make_safe_move(node)
             if child:
                 frontier.append(child)
                 self.visited.add(child.state)
-                self.tracked_path.append((node.state, self.facing))
+                action, _ = child.action
+                if action == 'move':
+                    self.tracked_path.append((node.state, self.facing))
             else:
                 self.program.add_action("No safe moves left. Backtracking.")
                 if not self.tracked_path:
                     self.program.add_action("No more positions to backtrack to. Exiting.")
                     return None
                 pos, direction = self.tracked_path.pop()
-                self.facing, alignment_cost = self.align_direction(self.facing, self.opposite_direction(direction), True)
-                new_cost = alignment_cost + self.move_forward()
-                self.point -= new_cost
-                prev_node = Node(pos, node, self.facing, new_cost)
+                self.facing = self.align_direction(self.facing, self.opposite_direction(direction))
+                self.point -= self.move_forward()
+                prev_node = Node(pos, node, ('move', self.facing), 0)
                 frontier.append(prev_node)
 
         return None
@@ -278,6 +355,4 @@ class Agent:
 
     def die(self):
         self.program.add_action(f"Agent died at position {self.pos}.")
-        exit()
-        
 
