@@ -86,7 +86,7 @@ class Program:
     
     def remove_gold(self, pos):
         x, y = pos
-        self.map[self.size - x][y-1] = self.map[self.size - x][y-1].replace(' .G. ', ' . ', 1)
+        self.map[self.size - x][y-1] = self.map[self.size - x][y-1].replace('.G.', '', 1)
     
     def remove_element(self, pos, element):
         if element == 'W':
@@ -94,12 +94,12 @@ class Program:
         elif element == 'H_P':
             percept = 'G_L'
         x, y = pos
-        self.map[self.size - x][y-1] = self.map[self.size - x][y-1].replace(' .' + element + ' .', '.', 1)
+        self.map[self.size - x][y-1] = self.map[self.size - x][y-1].replace('.' + element + '.', '', 1)
         if element not in self.map[self.size - x][y-1]:
             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 nx, ny = x + dx, y + dy
                 if 0 <= nx < self.size and 0 <= ny < self.size:
-                    self.map[nx][ny] = self.map[nx][ny].replace(' .' + percept + '. ', ' .', 1)
+                    self.map[nx][ny] = self.map[nx][ny].replace('.' + percept + '.', '', 1)
             
     def move_agent(self, pos, direction, step):
         time.sleep(0.5) 
@@ -173,7 +173,7 @@ class Program:
                     self.scroll_y += 1
                     
     def update_status(self, health, point, healing_potions=0):
-        pygame.draw.rect(self.button_surface, (255, 255, 255), (self.left_width / 2, 0, self.left_width / 2, 100))
+        pygame.draw.rect(self.button_surface, (255, 255, 255), (self.left_width / 2, 0, self.left_width / 2, 200))
         font = pygame.font.SysFont(None, 24)
         health_text = font.render(f'Health: {health}', True, (0, 0, 0))
         point_text = font.render(f'Point: {point}', True, (0, 0, 0))
