@@ -33,7 +33,7 @@ class Program:
             '.G.': ('./assets/gold.png', 'Gold'),
             '.P_G.': ('./assets/poisonous_gas.png', 'Poisonous Gas'),
             '.H_P.': ('./assets/healing_potion.png', 'Healing Potion'),
-            '.W_P.': ('./assets/whiff.png', 'Whiff'),
+            '.W_H.': ('./assets/whiff.png', 'Whiff'),
             '.G_L.': ('./assets/glow.png', 'Glow'),
             '.V.': ('./assets/wumpus.png', 'Visited')
         }
@@ -70,7 +70,7 @@ class Program:
         for i in range(self.size):
             for j in range(self.size):
                 if '.P_G.' in self.map[i][j]:
-                    self.add_percept(i, j, 'W_P')
+                    self.add_percept(i, j, 'W_H')
                 if '.H_P.' in self.map[i][j]:
                     self.add_percept(i, j, 'G_L')
                 if '.W.' in self.map[i][j]:

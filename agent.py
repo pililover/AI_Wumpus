@@ -77,12 +77,12 @@ class Agent:
             self.KB = And(self.KB, Not(symbols(f'S{x}{y}')))
             
         # Whiff percepts
-        self.KB = And(self.KB, to_cnf(Equivalent(symbols(f'W_P{x}{y}'), Or(*PGs)), True))
-        self.KB = And(self.KB, to_cnf(Equivalent(Not(symbols(f'W_P{x}{y}')), And(*[Not(PG) for PG in PGs])), True))
-        if '.W_P.' in percepts:
-            self.KB = And(self.KB, symbols(f'W_P{x}{y}'))
+        self.KB = And(self.KB, to_cnf(Equivalent(symbols(f'W_H{x}{y}'), Or(*PGs)), True))
+        self.KB = And(self.KB, to_cnf(Equivalent(Not(symbols(f'W_H{x}{y}')), And(*[Not(PG) for PG in PGs])), True))
+        if '.W_H.' in percepts:
+            self.KB = And(self.KB, symbols(f'W_H{x}{y}'))
         else:
-            self.KB = And(self.KB, Not(symbols(f'W_P{x}{y}')))
+            self.KB = And(self.KB, Not(symbols(f'W_H{x}{y}')))
         
         # Glow percepts
         self.KB = And(self.KB, to_cnf(Equivalent(symbols(f'G_L{x}{y}'), Or(*HPs)), True))
