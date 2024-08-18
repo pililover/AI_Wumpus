@@ -32,7 +32,7 @@ class Program:
             '.S.': ('./assets/stench.png', 'Stench'),
             '.G.': ('./assets/gold.png', 'Gold'),
             '.P_G.': ('./assets/poisonous_gas.png', 'Poisonous Gas'),
-            '.H_P.': ('/assets/healing_potion.png', 'Healing Potion'),
+            '.H_P.': ('./assets/healing_potion.png', 'Healing Potion'),
             '.W_P.': ('./assets/whiff.png', 'Whiff'),
             '.G_L.': ('./assets/glow.png', 'Glow'),
             '.V.': ('./assets/wumpus.png', 'Visited')
@@ -83,6 +83,23 @@ class Program:
             nx, ny = x + dx, y + dy
             if 0 <= nx < self.size and 0 <= ny < self.size:
                 self.map[nx][ny] += ' .' + percept + '. '
+    
+    def remove_gold(self, pos):
+        x, y = pos
+        self.map[self.size - x][y-1] = self.map[self.size - x][y-1].replace(' .G. ', ' . ', 1)
+    
+    def remove_element(self, pos, element):
+        if element == 'W':
+            percept = 'S'
+        elif element == 'H_P':
+            percept = 'G_L'
+        x, y = pos
+        self.map[self.size - x][y-1] = self.map[self.size - x][y-1].replace(' .' + element + ' .', '.', 1)
+        if element not in self.map[self.size - x][y-1]:
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < self.size and 0 <= ny < self.size:
+                    self.map[nx][ny] = self.map[nx][ny].replace(' .' + percept + '. ', ' .', 1)
             
     def move_agent(self, pos, direction, step):
         time.sleep(0.5) 
@@ -155,14 +172,16 @@ class Program:
                 if self.scroll_y < len(self.actions_log) - 1:
                     self.scroll_y += 1
                     
-    def update_status(self, health, point):
+    def update_status(self, health, point, healing_potions=0):
         pygame.draw.rect(self.button_surface, (255, 255, 255), (self.left_width / 2, 0, self.left_width / 2, 100))
         font = pygame.font.SysFont(None, 24)
         health_text = font.render(f'Health: {health}', True, (0, 0, 0))
         point_text = font.render(f'Point: {point}', True, (0, 0, 0))
+        healing_potions_text = font.render(f'Potions: {healing_potions}', True, (0, 0, 0))
         
         self.button_surface.blit(health_text, (self.left_width / 2, 10))
         self.button_surface.blit(point_text, (self.left_width / 2, 50))
+        self.button_surface.blit(healing_potions_text, (self.left_width / 2, 90))
         self.screen.blit(self.button_surface, (0, 0))
         pygame.display.flip()
 
@@ -197,9 +216,11 @@ class Program:
         forward_text = font.render('Forward', True, (255, 255, 255))
         health_text = font.render(f'Health: {100}', True, (0, 0, 0))
         point_text = font.render(f'Point: {0}', True, (0, 0, 0))
+        healing_potions_text = font.render(f'Potions: {0}', True, (0, 0, 0))
         
         self.button_surface.blit(health_text, (self.left_width / 2, 10))
         self.button_surface.blit(point_text, (self.left_width / 2, 50))
+        self.button_surface.blit(healing_potions_text, (self.left_width / 2, 90))
         self.button_surface.blit(run_text, (self.control_buttons['run'].x + 10, self.control_buttons['run'].y + 15))
         self.button_surface.blit(back_text, (self.control_buttons['back'].x + 10, self.control_buttons['back'].y + 15))
         self.button_surface.blit(forward_text, (self.control_buttons['forward'].x + 10, self.control_buttons['forward'].y + 15))
@@ -253,9 +274,9 @@ class Program:
                 image = pygame.transform.scale(image, (50, 50)) 
                 text = pygame.font.SysFont(None, 24).render(self.object[percept][1], True, (0, 0, 0))
                 self.screen.blit(text, (offset_x, offset_y + 10))  
-                self.screen.blit(image, (offset_x + 60, offset_y - 10)) 
+                self.screen.blit(image, (offset_x + len(self.object[percept][1]) * 10, offset_y)) 
                 count_text = pygame.font.SysFont(None, 24).render(f"x{count}", True, (0, 0, 0))
-                self.screen.blit(count_text, (offset_x + 120, offset_y + 10)) 
+                self.screen.blit(count_text, (offset_x + len(self.object[percept][1]) * 10 + 60, offset_y + 10))
                 offset_y += 60 
         pygame.display.flip()
 
