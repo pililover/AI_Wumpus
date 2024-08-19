@@ -102,7 +102,7 @@ class Program:
                     self.map[nx][ny] = self.map[nx][ny].replace('.' + percept + '.', '', 1)
             
     def move_agent(self, pos, direction, step):
-        # time.sleep(0.5) 
+        time.sleep(0.5) 
         if self.agent_pos[self.step][0] is not None:
             self.clear_agent(self.agent_pos[self.step][0])
         self.agent_pos.append((pos, direction))
