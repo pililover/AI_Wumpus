@@ -15,16 +15,19 @@ class Agent:
         self.pos = (1, 1)
         self.program = program
         self.grid_size = program.size
-        self.tracked_visited = [[False for _ in range(self.grid_size)] for _ in range(self.grid_size)]
-        self.tracked_visited[self.grid_size - 1][0] = True
         self.facing = 'NORTH'
         self.visited = set()
-        self.safe_spots = set()
-        self.not_unsafe_spots = set()
+        self.unknown_cells = set()
+        self.safe = set()
+        self.not_unsafe = set()
         self.tracked_path = []
         self.point = 0
         self.hp = 100
         self.available_hp = 0
+        
+        for i in range (1, self.grid_size + 1):
+            for j in range(1, self.grid_size + 1):
+                self.unknown_cells.add((i, j))
         self.update_KB()
     
     def perceive_current_cell(self):
@@ -204,6 +207,11 @@ class Agent:
             ('WEST', (x, y-1))
         ]
         actions = ['climb', 'grab', 'heal', 'move']
+        
+        not_pit = False
+        not_wumpus = False
+        not_poison = False
+        
         if self.hp <= 50 and self.available_hp > 0:
             self.point -= 10
             self.available_hp -= 1
@@ -224,30 +232,32 @@ class Agent:
         moves_with_costs = []
         for direction, (r, c) in possible_moves:
             if 1 <= r <= self.grid_size and 1 <= c <= self.grid_size and (r, c) not in self.visited:
-                alignment_cost = self.align_direction_cost(self.facing, direction)
-                moves_with_costs.append((direction, (r, c), alignment_cost))
+                not_pit = self.PL_resolution(Not(symbols(f'P{r}{c}')))
+                # Check whether the cell has no wumpus
+                not_wumpus = self.PL_resolution(Not(symbols(f'W{r}{c}')))
+                # Check whether the cell has poison
+                not_poison = self.PL_resolution(Not(symbols(f'P_G{r}{c}')))
+                if not_pit and not_wumpus:
+                    if not not_poison:
+                        self.not_unsafe.add((r, c))
+                    if self.hp < 75 and not not_poison:
+                        continue
+                    alignment_cost = self.align_direction_cost(self.facing, direction)
+                    moves_with_costs.append((direction, (r, c), alignment_cost))
+                else:
+                    self.not_unsafe.add((r, c))
+                self.reduced_not_unsafe()
+                self.unknown_cells.discard((r, c))
 
         # Sort the possible moves by alignment cost (fewest turns required)
         moves_with_costs.sort(key=lambda move: move[2])  # Sort by alignment_cost
 
-        wumpus_cells = set()
         for direction, (r, c), alignment_cost in moves_with_costs:
-            # Check whether the cell has no pit
-            not_pit = self.PL_resolution(Not(symbols(f'P{r}{c}')))
-            # Check whether the cell has no wumpus
-            not_wumpus = self.PL_resolution(Not(symbols(f'W{r}{c}')))
-            # Check whether the cell has poison
-            not_poison = self.PL_resolution(Not(symbols(f'P_G{r}{c}')))
-            if not_pit and not_wumpus:
-                if self.hp < 75 and not not_poison:
-                    continue
-                
-                # Move in the aligned direction
-                self.facing = self.align_direction(self.facing, direction) # Update the agent's facing direction
-                total_cost = alignment_cost + self.move_forward()
-                self.point -= total_cost - alignment_cost
-                return Node((r, c), node, (actions[3], direction), total_cost)
-        
+            # Move in the aligned direction
+            self.facing = self.align_direction(self.facing, direction) # Update the agent's facing direction
+            total_cost = alignment_cost + self.move_forward()
+            self.point -= total_cost - alignment_cost
+            return Node((r, c), node, (actions[3], direction), total_cost)
         return None
 
 
@@ -264,6 +274,13 @@ class Agent:
                 self.program.update_status(self.hp, self.point, self.available_hp)
 
             self.visited.add(self.pos)
+            
+            if '.P_G.' in self.perceive_current_cell():
+                self.not_unsafe.add(self.pos)
+            else:
+                self.safe.add(self.pos)
+            
+            self.unknown_cells.discard(self.pos)
             if self.pos != self.start:
                 self.update_KB()
 
@@ -271,7 +288,7 @@ class Agent:
                 self.program.add_action(f"Gold found at {self.pos}!")
                 self.point += 5000
                 self.program.update_status(self.hp, self.point, self.available_hp)
-                return node  # Returning the path to gold
+                self.program.remove_gold(self.pos)
 
             child = self.make_safe_move(node)
             if child:
@@ -282,8 +299,16 @@ class Agent:
                     self.tracked_path.append((node.state, self.facing))
             else:
                 self.program.add_action("No safe moves left. Backtracking.")
+                self.program.add_action("No safe moves left. Checking for inaccessible cells.")
+                if not self.unknown_cells:
+                    self.program.add_action("No more safe cells to explore. Returning to start.")
+                    self.backtrack_to_start()
+                    return
                 if not self.tracked_path:
                     self.program.add_action("No more positions to backtrack to. Exiting.")
+                    print(self.unknown_cells)
+                    print(self.safe)
+                    print(self.not_unsafe)
                     return None
                 pos, direction = self.tracked_path.pop()
                 self.facing = self.align_direction(self.facing, self.opposite_direction(direction))
@@ -292,7 +317,11 @@ class Agent:
                 frontier.append(prev_node)
 
         return None
-
+    
+    def reduced_not_unsafe(self):
+        cells = self.safe.intersection(self.not_unsafe)
+        for cell in cells:
+            self.not_unsafe.discard(cell)
 
     def backtrack_to_start(self):
         # Implement a method to backtrack to the starting position
