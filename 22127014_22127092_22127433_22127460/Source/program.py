@@ -5,7 +5,7 @@ from agent import Agent
 
 class Program:
     def __init__(self, input_file):
-        self.map_files = ['map1.txt', 'map2.txt', 'map3.txt', 'map4.txt', 'map5.txt']
+        self.map_files = ['./input/map1.txt', './input/map2.txt', './input/map3.txt', './input/map4.txt', './input/map5.txt']
         self.load_map(input_file)
         self.left_width = 250
         pygame.init()
