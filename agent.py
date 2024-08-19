@@ -260,6 +260,14 @@ class Agent:
             return Node((r, c), node, (actions[3], direction), total_cost)
         return None
 
+    def is_surrounded_by_unsafe(self, cell):
+        x, y = cell
+        neighbors = self.neighbor_cells(x, y)
+        
+        for neighbor in neighbors:
+            if neighbor in self.safe or neighbor in self.unknown_cells:
+                return False
+        return True
 
     def explore(self):
         frontier = []
@@ -289,6 +297,11 @@ class Agent:
                 self.point += 5000
                 self.program.update_status(self.hp, self.point, self.available_hp)
                 self.program.remove_gold(self.pos)
+                                   
+            for unknown_cell in list(self.unknown_cells):  # Sử dụng list() để tránh thay đổi tập hợp khi duyệt
+                if self.is_surrounded_by_unsafe(unknown_cell):
+                    self.not_unsafe.add(unknown_cell)
+                    self.unknown_cells.discard(unknown_cell)
 
             child = self.make_safe_move(node)
             if child:

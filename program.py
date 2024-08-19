@@ -102,7 +102,7 @@ class Program:
                     self.map[nx][ny] = self.map[nx][ny].replace('.' + percept + '.', '', 1)
             
     def move_agent(self, pos, direction, step):
-        time.sleep(0.5) 
+        # time.sleep(0.5) 
         if self.agent_pos[self.step][0] is not None:
             self.clear_agent(self.agent_pos[self.step][0])
         self.agent_pos.append((pos, direction))
@@ -282,12 +282,18 @@ class Program:
 
     def draw_grid(self):
         self.screen.fill((255, 255, 255))
+        start_image = pygame.image.load('./assets/start.png')  # Đường dẫn tới hình ảnh ô bắt đầu
+        start_image = pygame.transform.scale(start_image, (self.cell_size, self.cell_size))
+
         for i in range(self.size):
             for j in range(self.size):
                 rect = pygame.Rect(self.left_width + j * self.cell_size, i * self.cell_size, self.cell_size, self.cell_size)
                 cell_pos = (self.size - i, j + 1)
 
-                if cell_pos in self.visited:
+                if cell_pos == (1, 1):
+                    # Vẽ hình ảnh cho ô bắt đầu
+                    self.screen.blit(start_image, rect.topleft)
+                elif cell_pos in self.visited:
                     color = (255, 255, 255)
                     pygame.draw.rect(self.screen, color, rect)
                     elements = self.map[i][j].split(' ')
@@ -301,8 +307,10 @@ class Program:
                     pygame.draw.rect(self.screen, color, rect)
 
                 pygame.draw.rect(self.screen, (0, 0, 0), rect, 1)
+
         self.screen.blit(self.button_surface, (0, 0))
         pygame.display.flip()
+
 
     def reset_map(self):
         self.step = 0
