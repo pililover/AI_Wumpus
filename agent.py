@@ -315,7 +315,7 @@ class Agent:
                 self.program.add_action("No safe moves left. Checking for inaccessible cells.")
                 if not self.unknown_cells:
                     self.program.add_action("No more safe cells to explore. Returning to start.")
-                    self.backtrack_to_start()
+                    self.find_path_to_start()
                     return
                 if not self.tracked_path:
                     self.program.add_action("No more positions to backtrack to. Exiting.")
@@ -336,9 +336,59 @@ class Agent:
         for cell in cells:
             self.not_unsafe.discard(cell)
 
-    def backtrack_to_start(self):
+    def find_path_to_start(self):
         # Implement a method to backtrack to the starting position
-        pass
+        start = Node(self.pos, None, None, 0)
+        goal = (1, 1)
+        frontier = PriorityQueue()
+        reached = dict()
+        reached[start.state] = start
+        frontier.put(start)
+        while not frontier.empty():
+            node = frontier.get()
+            direction = node.action
+            if direction is not None:
+                self.facing = self.align_direction(self.facing, direction)
+                self.point -= self.move_forward()
+                self.program.move_agent(self.pos, self.facing, 1)
+                self.program.update_status(self.hp, self.point, self.available_hp)
+            if node.state == goal:
+                self.point -= self.move_forward()
+                self.program.move_agent(self.pos, self.facing, 1)
+                self.program.update_status(self.hp, self.point, self.available_hp)
+                self.point += 10
+                self.program.update_status(self.hp, self.point, self.available_hp)
+                return node
+            
+            for child in self.expand(node, goal):
+                childState = child.state
+                if childState not in reached or child.path_cost < reached[childState].path_cost:
+                    reached[childState] = child
+                    frontier.put(child)
+    
+        return None
+    
+    def expand(self, node, goal):
+        
+        def heuristic(state, goal):
+            return abs(state[0] - goal[0])*10 + abs(state[1] - goal[1])*10
+        
+        row, col = node.state
+        candidates = [
+            ('NORTH', (row + 1, col)),
+            ('SOUTH', (row - 1, col)),
+            ('WEST', (row, col - 1)),
+            ('EAST', (row, col + 1))
+        ]
+        nodes = []
+        for direction, (r, c) in candidates:
+            if 1 <= r <= self.grid_size and 1 <= c <= self.grid_size:
+                if (r, c) not in self.not_unsafe:
+                    childState = (r, c)
+                    cost = self.align_direction_cost(self.facing, direction) + 10
+                    h = heuristic(childState, goal)
+                    nodes.append(Node((r, c), node, direction, cost, h))
+        return nodes
 
     def PL_resolve(self, literal, Ci, Cj):
         clause1 = set(Ci.args if isinstance(Ci, Or) else [Ci])
